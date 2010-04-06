@@ -1,0 +1,4 @@
+#!/usr/bin/env perl
+use lib '/projects/Indexer/lib';
+use Indexer::Cmd;
+Indexer::Cmd->run;
