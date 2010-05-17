@@ -3,23 +3,32 @@ use base qw(App::Cmd::Simple);
 use Indexer;
 
 sub opt_spec {
-    return ( 
-        [ "file|f=s", "index the given file" ], 
-        [ "top|t=s", "show top words" ], 
-        [ "word|w=s", "lookup word" ], 
+    return (
+        [ "file|f=s", "index the given file" ],
+        [ "top|t=s",  "show top words" ],
+        [ "word|w=s", "lookup word" ],
     );
+}
+
+sub validate_args {
+    my ( $self, $opt, $args ) = @_;
+
+    # At least one option must be specified
+    if ( !scalar keys %$opt ) {
+        die $self->usage->text;
+    }
 }
 
 sub execute {
     my ( $self, $opt, $args ) = @_;
 
-    if (my $file = $opt->file) {
+    if ( my $file = $opt->file ) {
         $self->usage_error("File does not exist: $file") unless -e $file;
-        Indexer->process( $file );
+        Indexer->process($file);
     }
-    
-    Indexer->top($opt->top) if $opt->top;
-    Indexer->word($opt->word) if $opt->word;
+
+    Indexer->top( $opt->top )   if $opt->top;
+    Indexer->word( $opt->word ) if $opt->word;
 }
 
 1;

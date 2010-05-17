@@ -1,4 +1,5 @@
 #!/usr/bin/env perl
-use lib '/projects/Indexer/lib';
+use FindBin;
+use lib "$FindBin::Bin/../lib";
 use Indexer::Cmd;
 Indexer::Cmd->run;

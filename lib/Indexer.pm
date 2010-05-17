@@ -8,66 +8,87 @@ use File::Slurp qw(read_file);
 use Lingua::EN::Splitter;
 use Lingua::Stem::Snowball;
 use Lingua::EN::StopWords qw(%StopWords);
+use 5.010;
 
 use ORLite {
-    file   => 'sqlite.db',
+    file     => 'sqlite.db',
     readonly => 0,
-    create => sub {
+    create   => sub {
         my $dbh = shift;
-        $dbh->do('CREATE TABLE word ( id INTEGER PRIMARY KEY, word TEXT, count INTEGER, page INTEGER)');
-    }
+        $dbh->do(<<END_SQL);
+CREATE TABLE word ( 
+    id INTEGER PRIMARY KEY, 
+    word TEXT, count INTEGER, 
+    page INTEGER
+)
+END_SQL
+      }
 };
 
 sub process {
     my ( $class, $filename ) = @_;
-    
+
     my $doc      = read_file($filename);
     my $splitter = new Lingua::EN::Splitter;
     my $stemmer  = Lingua::Stem::Snowball->new( lang => 'en' );
 
     my @pages = split "\f", $doc;
-    
-    print "Generating index for file: $filename\n";
 
-    for my $page (0 .. $#pages) {
-        print "Processing page $page..\n";
+    say "Generating index for file: $filename";
 
-        my @words = grep { !$StopWords{$_} } map {lc} @{ $splitter->words( $pages[$page] ) };
+    for my $page ( 0 .. $#pages ) {
+        say "Processing page $page..";
+
+        my @words =
+          grep { !$StopWords{$_} }
+          map  { lc } @{ $splitter->words( $pages[$page] ) };
 
         $stemmer->stem_in_place( \@words );
-        
+
         my %freq;
         map { $freq{$_}++ } grep { !$StopWords{$_} } @words;
 
-        for my $word (keys %freq) {
-            Indexer::Word->new( word => $word, count => $freq{$word}, page => $page )->insert;
+        for my $word ( keys %freq ) {
+            Indexer::Word->new(
+                word  => $word,
+                count => $freq{$word},
+                page  => $page
+            )->insert;
         }
     }
 
-    print "Finished procesing all pages.\n";
+    say "Finished procesing all pages.";
 }
 
 sub word {
-    my ($class, $word) = @_;
-    my $rows = Indexer->selectall_arrayref( 'select page, count from word where word = ?', undef, $word );
-    print "Word stem '$word' ";
-    if (!@$rows) {
-        print "not found.\n";
+    my ( $class, $word ) = @_;
+    my $rows = Indexer->selectall_arrayref(
+        'select page, count from word where word = ?',
+        undef, $word );
+    print "$word: ";
+    if ( !@$rows ) {
+        say "not found.";
         return;
     }
-    print "appears:\n";
+    my @hits;
     for my $row (@$rows) {
-        print " $row->[1] time(s) on page $row->[0]\n";
+        my $word = $row->[1];
+        my $times = $row->[0];
+        push @hits, $word . ( $times > 1 ? " (x$times)" : '' );
     }
+    say join ', ', @hits;
 }
 
 sub top {
-    my ($class, $n) = @_;
+    my ( $class, $n ) = @_;
     $n ||= 10;
-    my $rows = Indexer->selectall_arrayref( 'select sum(count) as count, word from word group by word order by count desc limit ?', undef, $n );
-    print "Top $n Words:\n";
+    my $rows = Indexer->selectall_arrayref(
+'select sum(count) as count, word from word group by word order by count desc limit ?',
+        undef, $n
+    );
+    say "Top $n Words:\n";
     for my $row (@$rows) {
-        printf("%5d %s\n", @$row);
+        printf( "%5d %s\n", @$row );
     }
 }
 
