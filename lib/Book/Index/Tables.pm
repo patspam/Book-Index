@@ -37,7 +37,7 @@ use ORLite {
     'package'    => 'Book::Index',
     file         => 'data/sqlite.db',
     user_version => USER_VERSION,
-    cleanup      => 'VACUUM',
+    #cleanup      => 'VACUUM',
     create       => \&create,
     prune        => 1,                  # while developing
 };
