@@ -15,6 +15,7 @@ use Any::Moose;
 use File::Slurp qw(read_file);
 use Book::Index::Splitter;
 use Lingua::Stem::Snowball;
+use Roman;
 
 has 'doc'                 => ( is => 'rw' );
 has 'doc_contents'        => ( is => 'rw' );
@@ -29,6 +30,7 @@ has 'seen_stems' => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
 has 'log_indent' => ( is => 'rw', isa => 'Int',     default => 0 );
 has 'max_pages'   => ( is => 'rw', 'isa' => 'Int', default => 20 );
 has 'max_phrases' => ( is => 'rw', 'isa' => 'Int', default => 0 );
+has 'pre_pages' => ( is => 'rw', 'isa' => 'Int', default => 0 );
 
 sub truncate {
     for my $table
@@ -78,6 +80,7 @@ sub populate_pages {
     my $page_counter = 0;
     for my $page_contents ( split "\f", $contents ) {
         $page_counter++;
+        
         my $page = Book::Index::Page->new(
             page     => $page_counter,
             contents => $page_contents,
@@ -327,6 +330,12 @@ sub primary {
     }
 }
 
+sub format_page {
+    my ( $self, $page ) = @_;
+    $page = $page->page if ref $page;
+    return $page <= $self->pre_pages ? lc Roman($page) : $page - $self->pre_pages;
+}
+
 sub output1 {
     my $self = shift;
 
@@ -375,7 +384,7 @@ sub output1 {
     }
 
     for my $page ( sort { $a <=> $b } keys %pages ) {
-        say "[Page $page]";
+        say "-- Page @{[$self->format_page($page)]} --";
         say '';
 
         say 'Phrases:';
@@ -397,19 +406,22 @@ sub output1 {
         }
     }
 }
+    
 
 sub output2 {
     my $self = shift;
 
-    say "[Phrases]";
+    # Mush together phrase, word and stem to reduce redundancy
     my %shown;
+    
+    say "[Phrases]";
     for my $phrase ( Book::Index::Phrase->select('order by phrase') ) {
         my @pages;
         for my $phrase_page ( Book::Index::PhrasePage->select( 'where phrase = ?', $phrase->id ) ) {
             push @pages, $phrase_page->page;
         }
         say "@{[$phrase->original]}@{[$self->primary($phrase)]}: " . join ',', @pages;
-        $shown{ $phrase->original }++;
+        $shown{ $phrase->phrase }++;
     }
     say '';
 
@@ -420,10 +432,8 @@ sub output2 {
             my $phrase = Book::Index::Phrase->load( $phrase_word->phrase );
             my $word   = Book::Index::Word->load( $phrase_word->word );
 
-            # filter out anything that matches a phrase already output
-            # next if $shown{$phrase->original};
-
-            # output phrase_word_pages as "$word ($original_phrase): 1,2,3,.."
+            # Filter out any WORD that matches a phrase already output
+            next if $shown{$word->word}++;
 
             my @pages;
             for my $phrase_word_page (
@@ -445,10 +455,11 @@ sub output2 {
             my $phrase = Book::Index::Phrase->load( $phrase_stem->phrase );
             my $stem   = Book::Index::Stem->load( $phrase_stem->stem );
 
-            # filter out anything that matches a phrase already output
-            # next if $shown{$phrase->original};
-
-            # output phrase_stem_pages as "$stem ($original_phrase): 1,2,3,.."
+            # Filter out any STEM that matches a phrase already output
+            next if $shown{$stem->stem}++;
+            
+            # Filter out stems that are stopwords
+            next if $self->splitter->stop($stem->stem);
 
             my @pages;
             for my $phrase_stem_page (

@@ -8,6 +8,7 @@ sub opt_spec {
         [ "help|h",    "helpful information" ],
         [ "rebuild|r", "rebuild database" ],
         [ "pages=i",   "max pages to process" ],
+        [ "pre=i",   "pre (title) pages to number with roman numerals" ],
         [ "output|o",  "output report" ],
         [ "suggest|s", "suggest words" ],
     );
@@ -28,7 +29,9 @@ sub execute {
     my ( $self, $opt, $args ) = @_;
 
     my $max_pages = $opt->pages || 0;
-    my $b = Book::Index->new( verbose => $opt->verbose, max_pages => $max_pages );
+    my $pre_pages = $opt->pre || 0;
+    
+    my $b = Book::Index->new( verbose => $opt->verbose, max_pages => $max_pages, pre_pages => $pre_pages );
     if ( $opt->rebuild ) {
         $self->usage_error('Document and/or Phrases not specified') unless @$args eq 2;
         $b->truncate;
