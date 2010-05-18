@@ -338,17 +338,13 @@ sub output1 {
         $pages{$page} = {};
 
         my %shown_on_page;
-        Book::Index::PhrasePage->iterate(
-            'where page = ?',
-            $page,
-            sub {
-                my $phrase = Book::Index::Phrase->load( $_->phrase );
-                my $n      = $_->n;
-                push @{ $pages{$page}{phrases} },
-                    $phrase->original . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
-                $shown_on_page{ $phrase->original }++;
-            }
-        );
+        for my $phrase_page (Book::Index::PhrasePage->select('where page = ?',$page)) {
+            my $phrase = Book::Index::Phrase->load( $phrase_page->phrase );
+            my $n      = $phrase_page->n;
+            push @{ $pages{$page}{phrases} },
+                $phrase->original . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
+            $shown_on_page{ $phrase->original }++;
+        }
 
         # Words for phrase on page
         for my $phrase_word_page (Book::Index::PhraseWordPage->select('where page = ?', $page)) {
@@ -359,7 +355,6 @@ sub output1 {
             #next if $shown_on_page{$word->word};
 
             my $n = $phrase_word_page->n;
-            warn "Page: $page, Word: " . $word->word;
             push @{ $pages{$page}{words} },
                   "@{[$word->word]} (@{[$phrase->original]})"
                 . ( $n > 1 ? " x $n" : '' )
@@ -415,13 +410,9 @@ sub output2 {
     my %shown;
     for my $phrase ( Book::Index::Phrase->select('order by phrase') ) {
         my @pages;
-        Book::Index::PhrasePage->iterate(
-            'where phrase = ?',
-            $phrase->id,
-            sub {
-                push @pages, $_->page;
-            }
-        );
+        for my $phrase_page (Book::Index::PhrasePage->select('where phrase = ?',$phrase->id)) {
+            push @pages, $phrase_page->page;
+        };
         say "@{[$phrase->original]}@{[$self->primary($phrase)]}: " . join ',', @pages;
         $shown{ $phrase->original }++;
     }
@@ -440,14 +431,9 @@ sub output2 {
             # output phrase_word_pages as "$word ($original_phrase): 1,2,3,.."
 
             my @pages;
-            Book::Index::PhraseWordPage->iterate(
-                'where phrase = ? and word = ?',
-                $phrase->id,
-                $word->id,
-                sub {
-                    push @pages, $_->page;
-                }
-            );
+            for my $phrase_word_page (Book::Index::PhraseWordPage->select('where phrase = ? and word = ?',$phrase->id,$word->id)) {
+                push @pages, $phrase_word_page->page;
+            }
             push @output, "@{[$word->word]} (@{[$phrase->original]})@{[$self->primary($phrase)]}: " . join ',',
                 @pages;
         }
@@ -468,14 +454,9 @@ sub output2 {
             # output phrase_stem_pages as "$stem ($original_phrase): 1,2,3,.."
 
             my @pages;
-            Book::Index::PhraseStemPage->iterate(
-                'where phrase = ? and stem = ?',
-                $phrase->id,
-                $stem->id,
-                sub {
-                    push @pages, $_->page;
-                }
-            );
+            for my $phrase_stem_page (Book::Index::PhraseStemPage->select('where phrase = ? and stem = ?',$phrase->id,$stem->id)) {
+                push @pages, $phrase_stem_page->page;
+            }
             push @output, "@{[$stem->stem]} (@{[$phrase->original]})@{[$self->primary($phrase)]}: " . join ',',
                 @pages;
         }
