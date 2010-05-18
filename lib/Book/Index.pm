@@ -26,6 +26,7 @@ has 'stemmer'      => ( is => 'ro', builder => sub { Lingua::Stem::Snowball->new
 has 'seen_words'   => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
 has 'seen_stems'   => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
 has 'log_indent' => ( is => 'rw', isa => 'Int', default => 0 );
+has 'max_pages' => ( is => 'rw', 'isa' => 'Int', default => 5 );
 
 sub BUILD {
     my $self = shift;
@@ -47,16 +48,16 @@ sub populate_pages {
     my $page_counter = 0;
     for my $page_contents ( split "\f", $contents ) {
         $page_counter++;
-        last if $page_counter > 10;
-
+        $self->log("Page $page_counter->");
         my $page = Book::Index::Page->new(
             page     => $page_counter,
             contents => $page_contents,
         )->insert;
-
-        $self->log("Page $page_counter->");
+        
         $self->process_page($page);
+        
         $self->log("<-");
+        last if $self->max_pages && $page_counter >= $self->max_pages;
     }
     $self->log("<-Inserted $page_counter pages");
 }
@@ -66,12 +67,11 @@ sub process_page {
     
     # Get words on page
     my @words = uniq @{ $self->splitter->words( $page->contents ) };
+    $self->log( scalar @words . ' words' );
     
     my $seen_words = $self->seen_words;
     my $seen_stems = $self->seen_stems;
 
-    $self->log( scalar @words . ' words->' );
-    
     my (%word_freq, %stem_freq);
     for my $word (@words) {
         
@@ -95,8 +95,6 @@ sub process_page {
     for my $stem ( keys %stem_freq ) {
         Book::Index::StemPage->new( stem => $stem, page => $page->page, n => $stem_freq{$stem} );
     }
-    
-    $self->log('<-');
 }
 
 sub insert_word {
