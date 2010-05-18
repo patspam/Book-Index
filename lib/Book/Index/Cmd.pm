@@ -17,15 +17,14 @@ sub validate_args {
         exit 0;
     }
 
-    $self->usage_error('Document not specified') unless @$args eq 1;
+    $self->usage_error('Document and/or Phrases not specified') unless @$args eq 2;
 }
 
 sub execute {
     my ( $self, $opt, $args ) = @_;
     
-    my $b = Book::Index->new( doc => $args->[0], verbose => $opt->verbose );
-
-    $b->process_doc;
+    my $b = Book::Index->new( doc => $args->[0], phrase_doc => $args->[1], verbose => $opt->verbose );
+    $b->process;
 }
 
 1;

@@ -19,25 +19,45 @@ use Lingua::EN::StopWords qw(%StopWords);
 use List::MoreUtils qw(uniq);
 
 has 'doc' => ( is => 'rw', required => 1 );
-has 'doc_contents' => ( is => 'rw' );
-has 'verbose'      => ( is => 'rw', isa => 'Bool' );
-has 'splitter'     => ( is => 'ro', builder => sub { Lingua::EN::Splitter->new } );
-has 'stemmer'      => ( is => 'ro', builder => sub { Lingua::Stem::Snowball->new( lang => 'en' ) } );
-has 'seen_words'   => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
-has 'seen_stems'   => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
-has 'log_indent' => ( is => 'rw', isa => 'Int', default => 0 );
-has 'max_pages' => ( is => 'rw', 'isa' => 'Int', default => 5 );
+has 'doc_contents'        => ( is => 'rw' );
+has 'phrase_doc'          => ( is => 'rw', required => 1 );
+has 'phrase_doc_contents' => ( is => 'rw' );
+has 'verbose'             => ( is => 'rw', isa => 'Bool' );
+has 'splitter'            => ( is => 'ro', builder => sub { Lingua::EN::Splitter->new } );
+has 'stemmer'             => ( is => 'ro', builder => sub { Lingua::Stem::Snowball->new( lang => 'en' ) } );
+has 'seen_phrases'        => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
+has 'seen_words'          => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
+has 'seen_stems'          => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
+has 'log_indent'  => ( is => 'rw', isa   => 'Int', default => 0 );
+has 'max_pages'   => ( is => 'rw', 'isa' => 'Int', default => 3 );
+has 'max_phrases' => ( is => 'rw', 'isa' => 'Int', default => 10 );
 
 sub BUILD {
     my $self = shift;
-    my $doc  = $self->doc;
+
+    my $doc = $self->doc;
     die "File not found: $doc" unless -e $doc;
+
+    my $phrase_doc = $self->phrase_doc;
+    die "File not found: $phrase_doc" unless -e $phrase_doc;
+}
+
+sub process {
+    my $self = shift;
+    #$self->process_doc;
+    $self->process_phrase_doc;
 }
 
 sub process_doc {
     my $self = shift;
     $self->slurp_doc;
     $self->populate_pages;
+}
+
+sub process_phrase_doc {
+    my $self = shift;
+    $self->slurp_phrase_doc;
+    $self->populate_phrases;
 }
 
 sub populate_pages {
@@ -53,41 +73,84 @@ sub populate_pages {
             page     => $page_counter,
             contents => $page_contents,
         )->insert;
-        
+
         $self->process_page($page);
-        
+
         $self->log("<-");
         last if $self->max_pages && $page_counter >= $self->max_pages;
     }
     $self->log("<-Inserted $page_counter pages");
 }
 
+sub populate_phrases {
+    my $self     = shift;
+    my $contents = $self->phrase_doc_contents;
+
+    $self->log('Populating phrases->');
+    my $phrase_line_counter = 0;
+    for my $phrase_line ( split "\n", $contents ) {
+        $phrase_line_counter++;
+        # $self->log("LINE: $phrase_line->");
+        
+        my $phrase_counter = 0;
+        for my $phrase ( split /;/, $phrase_line ) {
+            
+            # first on line is primary
+            my $primary = $phrase_counter == 0;
+            
+            $phrase =~ s/^\s+|\s+$//;
+            next unless length $phrase > 0;
+            
+            # No need to populate phrases twice
+            if ( $self->{seen_phrases}{$phrase} ) {
+                warn "Duplicate phrase: $phrase, line $phrase_line_counter";
+                next;
+            }
+
+            $phrase_counter++;
+            # $self->log("PHRASE: $phrase->");
+            
+            my $new_phrase = $self->insert_phrase(
+                phrase   => lc $phrase,
+                original => $phrase,
+                primary  => $primary,
+            );
+
+            $self->process_phrase($new_phrase);
+
+            # $self->log('<-');
+            last if $self->max_phrases && $phrase_counter >= $self->max_phrases;
+        }
+        # $self->log('<-');
+    }
+}
+
 sub process_page {
     my ( $self, $page ) = @_;
-    
+
     # Get words on page
     my @words = uniq @{ $self->splitter->words( $page->contents ) };
     $self->log( scalar @words . ' words' );
-    
+
     my $seen_words = $self->seen_words;
     my $seen_stems = $self->seen_stems;
 
-    my (%word_freq, %stem_freq);
+    my ( %word_freq, %stem_freq );
     for my $word (@words) {
-        
+
         # Get canonical word and stem
         $word = lc $word;    # TODO: do we really want lowercase?
         my $stem = $self->stemmer->stem($word) || '';
-        
+
         # Bump word and stem appearances for this page
         $word_freq{$word}++;
         $stem_freq{$stem}++;
-        
+
         # Insert word and stem into db
         my $stem_id = $self->insert_stem( stem => $stem )->id;
         $self->insert_word( word => $word, stem => $stem_id );
     }
-    
+
     # Create word_page and stem_page entries
     for my $word ( keys %word_freq ) {
         Book::Index::WordPage->new( word => $word, page => $page->page, n => $word_freq{$word} );
@@ -95,6 +158,15 @@ sub process_page {
     for my $stem ( keys %stem_freq ) {
         Book::Index::StemPage->new( stem => $stem, page => $page->page, n => $stem_freq{$stem} );
     }
+}
+
+sub process_phrase {};
+
+sub insert_phrase {
+    my ( $self, %args ) = @_;
+    my $phrase       = $args{phrase};
+    my $seen_phrases = $self->seen_phrases;
+    return $seen_phrases->{$phrase} = $seen_phrases->{$phrase} || Book::Index::Phrase->new(%args)->insert;
 }
 
 sub insert_word {
@@ -116,6 +188,13 @@ sub slurp_doc {
     $self->log( "Reading doc: " . $self->doc );
     my $contents = read_file( $self->doc );
     $self->doc_contents($contents);
+}
+
+sub slurp_phrase_doc {
+    my $self = shift;
+    $self->log( "Reading phrase doc: " . $self->phrase_doc );
+    my $contents = read_file( $self->phrase_doc );
+    $self->phrase_doc_contents($contents);
 }
 
 sub log {

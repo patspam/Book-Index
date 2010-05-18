@@ -7,12 +7,17 @@ use File::Temp;
 my @original_pages = ( 'this is page 1', 'page 2 is about horses' );
 my $original_contents = join "\f", @original_pages;
 
-my $file     = File::Temp->new;
-my $filename = "$file";
-$file->print($original_contents);
-$file->close;
+my $doc     = File::Temp->new;
+my $docname = "$doc";
+$doc->print($original_contents);
+$doc->close;
 
-my $b = Book::Index->new( doc => $filename );
+my $phrase_doc     = File::Temp->new;
+my $phrase_docname = "$phrase_doc";
+$phrase_doc->print($original_contents);
+$phrase_doc->close;
+
+my $b = Book::Index->new( doc => $docname, phrase_doc => $phrase_docname);
 $b->process_doc;
 
 is( $b->doc_contents, $original_contents, 'Correct contents' );
