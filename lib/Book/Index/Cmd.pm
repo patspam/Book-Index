@@ -8,6 +8,7 @@ sub opt_spec {
         [ "help|h",    "helpful information" ],
         [ "rebuild|r", "rebuild database" ],
         [ "output|o",  "output report" ],
+        [ "suggest|s", "suggest words" ],
     );
 }
 
@@ -18,8 +19,8 @@ sub validate_args {
         print $self->usage;
         exit 0;
     }
-    
-    die $self->usage unless $opt->rebuild || $opt->output;
+
+    die $self->usage unless $opt->rebuild || $opt->output || $opt->suggest;
 }
 
 sub execute {
@@ -32,6 +33,7 @@ sub execute {
         $b->process( $args->[0], $args->[1] );
     }
     $b->output if $opt->output;
+    $b->suggest if $opt->suggest;
 }
 
 1;

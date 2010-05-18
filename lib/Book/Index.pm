@@ -17,8 +17,9 @@ use Lingua::EN::Splitter;    # TODO: replace with something better (that doesn't
 use Lingua::Stem::Snowball;
 use Lingua::EN::StopWords qw(%StopWords);
 use List::MoreUtils qw(uniq);
+use Scalar::Util qw(looks_like_number);
 
-has 'doc' => ( is => 'rw' );
+has 'doc'                 => ( is => 'rw' );
 has 'doc_contents'        => ( is => 'rw' );
 has 'phrase_doc'          => ( is => 'rw' );
 has 'phrase_doc_contents' => ( is => 'rw' );
@@ -33,20 +34,22 @@ has 'max_pages'   => ( is => 'rw', 'isa' => 'Int', default => 10 );
 has 'max_phrases' => ( is => 'rw', 'isa' => 'Int', default => 0 );
 
 sub truncate {
-    for my $table qw(Page Phrase Word Stem WordPage StemPage PhrasePage PhraseWord PhraseStem PhraseWordPage PhraseStemPage) {
+    for my $table
+        qw(Page Phrase Word Stem WordPage StemPage PhrasePage PhraseWord PhraseStem PhraseWordPage PhraseStemPage)
+    {
         my $class = "Book::Index::$table";
         $class->truncate;
     }
 }
 
 sub process {
-    my ($self, $doc, $phrase_doc) = @_;
-    
-    die "File not found: $doc" unless -e $doc;
+    my ( $self, $doc, $phrase_doc ) = @_;
+
+    die "File not found: $doc"        unless -e $doc;
     die "File not found: $phrase_doc" unless -e $phrase_doc;
     $self->doc($doc);
     $self->phrase_doc($phrase_doc);
-    
+
     $self->process_doc;
     $self->process_phrase_doc;
     $self->populate_phrase_pages;    # iterates over pages and phrases
@@ -222,7 +225,7 @@ sub populate_phrase_stems {
     my ( $self, $phrase, @words ) = @_;
 
     # Skip phrase words that start with a capital letter (authors etc..)
-    my @phrase_stems = grep {qr/^[A-Z]/} @words;
+    my @phrase_stems = grep { !m/^[A-Z]/ } @words;
     $self->stemmer->stem_in_place( \@phrase_stems );
 
     # $self->log("PHRASE STEMS: " . join ':', @phrase_stems);
@@ -233,7 +236,7 @@ sub populate_phrase_stems {
     for my $stem (@phrase_stems) {
 
         # $self->log("NEW PHRASE STEM: " . $stem->stem);
-        Book::Index::PhraseStem->new( phrase => $phrase->id, stem => $stem->id );
+        Book::Index::PhraseStem->new( phrase => $phrase->id, stem => $stem->id )->insert;
 
         # Add all stem_pages matches
         for my $stem_page ( Book::Index::StemPage->select( 'where stem = ?', $stem->id ) ) {
@@ -318,75 +321,95 @@ sub populate_phrase_pages {
 }
 
 sub primary {
-    my ($self, $phrase) = @_;
-    if ($phrase->primary) {
+    my ( $self, $phrase ) = @_;
+    if ( $phrase->primary ) {
         return ' [' . Book::Index::Phrase->load( $phrase->primary )->phrase . ']';
-    } else {
+    }
+    else {
         return '';
     }
 }
 
 sub output1 {
     my $self = shift;
-    
+
     my %pages;
     for my $page ( Book::Index::Page->select('order by page') ) {
         $page = $page->page;
-        
+
         my %shown_on_page;
-        Book::Index::PhrasePage->iterate('where page = ?', $page, sub {
-            my $phrase = Book::Index::Phrase->load( $_->phrase );
-            my $n      = $_->n;
-            push @{$pages{$page}{phrases}}, $phrase->original . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
-            $shown_on_page{$phrase->original}++;
-        });
-            
+        Book::Index::PhrasePage->iterate(
+            'where page = ?',
+            $page,
+            sub {
+                my $phrase = Book::Index::Phrase->load( $_->phrase );
+                my $n      = $_->n;
+                push @{ $pages{$page}{phrases} },
+                    $phrase->original . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
+                $shown_on_page{ $phrase->original }++;
+            }
+        );
+
         # Words for phrase on page
-        Book::Index::PhraseWordPage->iterate('where page = ?', $page, sub {
-            my $word = Book::Index::Word->load( $_->word );
-            my $phrase = Book::Index::Phrase->load( $_->phrase );
-            
-            # filter out words that match a phrase already output
-            #return if $shown_on_page{$word->word};
-            
-            my $n      = $_->n;
-            push @{$pages{$page}{words}}, "@{[$word->word]} (@{[$phrase->original]})" . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
-            $shown_on_page{$word->word}++;
-        });
-        
+        Book::Index::PhraseWordPage->iterate(
+            'where page = ?',
+            $page,
+            sub {
+                my $word   = Book::Index::Word->load( $_->word );
+                my $phrase = Book::Index::Phrase->load( $_->phrase );
+
+                # filter out words that match a phrase already output
+                #return if $shown_on_page{$word->word};
+
+                my $n = $_->n;
+                push @{ $pages{$page}{words} },
+                      "@{[$word->word]} (@{[$phrase->original]})"
+                    . ( $n > 1 ? " x $n" : '' )
+                    . $self->primary($phrase);
+                $shown_on_page{ $word->word }++;
+            }
+        );
+
         # Stems for phrase on page
-        Book::Index::PhraseStemPage->iterate('where page = ?', $page, sub {
-            my $stem = Book::Index::Stem->load( $_->stem );
-            my $phrase = Book::Index::Phrase->load( $_->phrase );
-            
-            # filter out stems that match a phrase already output
-            #return if $shown_on_page{$stem->stem};
-            
-            my $n      = $_->n;
-            push @{$pages{$page}{stems}}, "@{[$stem->stem]} (@{[$phrase->original]})" . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
-            $shown_on_page{$stem->stem}++;
-        });
+        Book::Index::PhraseStemPage->iterate(
+            'where page = ?',
+            $page,
+            sub {
+                my $stem   = Book::Index::Stem->load( $_->stem );
+                my $phrase = Book::Index::Phrase->load( $_->phrase );
+
+                # filter out stems that match a phrase already output
+                #return if $shown_on_page{$stem->stem};
+
+                my $n = $_->n;
+                push @{ $pages{$page}{stems} },
+                      "@{[$stem->stem]} (@{[$phrase->original]})"
+                    . ( $n > 1 ? " x $n" : '' )
+                    . $self->primary($phrase);
+                $shown_on_page{ $stem->stem }++;
+            }
+        );
     }
-    
+
     for my $page ( sort keys %pages ) {
         say "[Page $page]";
         say '';
-        
-        if (my @phrases = @{$pages{$page}{phrases} || []}) {
+
+        if ( my @phrases = @{ $pages{$page}{phrases} || [] } ) {
             say 'Phrases:';
-            say join "\n", map { " $_ " } @phrases;
+            say join "\n", map {" $_ "} @phrases;
             say '';
         }
-        
-        if (my @words = @{$pages{$page}{words} || []}) {
+
+        if ( my @words = @{ $pages{$page}{words} || [] } ) {
             say 'Phrase Words:';
-            say join "\n", map { " $_ " } @words;
+            say join "\n", map {" $_ "} @words;
             say '';
         }
-        
-        if (my @stems = @{$pages{$page}{stems} || []}) {
+
+        if ( my @stems = @{ $pages{$page}{stems} || [] } ) {
             say 'Phrase Stems:';
-            say join "\n", map { " $_ " } @{$pages{$page}{stems} || []};
+            say join "\n", map {" $_ "} @{ $pages{$page}{stems} || [] };
             say '';
         }
     }
@@ -394,62 +417,144 @@ sub output1 {
 
 sub output2 {
     my $self = shift;
-    
+
     say "[Phrases]";
     my %shown;
-    for my $phrase (Book::Index::Phrase->select('order by phrase')) {
+    for my $phrase ( Book::Index::Phrase->select('order by phrase') ) {
         my @pages;
-        Book::Index::PhrasePage->iterate('where phrase = ?', $phrase->id, sub {
-            push @pages, $_->page;
-        });
+        Book::Index::PhrasePage->iterate(
+            'where phrase = ?',
+            $phrase->id,
+            sub {
+                push @pages, $_->page;
+            }
+        );
         say "@{[$phrase->original]}@{[$self->primary($phrase)]}: " . join ',', @pages;
-        $shown{$phrase->original}++;
+        $shown{ $phrase->original }++;
     }
     say '';
-    
+
     say "[Phrase Words]";
     {
         my @output;
-        for my $phrase_word (Book::Index::PhraseWord->select) {
-            my $phrase = Book::Index::Phrase->load($phrase_word->phrase);
-            my $word = Book::Index::Word->load($phrase_word->word);
-            
+        for my $phrase_word ( Book::Index::PhraseWord->select ) {
+            my $phrase = Book::Index::Phrase->load( $phrase_word->phrase );
+            my $word   = Book::Index::Word->load( $phrase_word->word );
+
             # filter out anything that matches a phrase already output
             # next if $shown{$phrase->original};
-            
+
             # output phrase_word_pages as "$word ($original_phrase): 1,2,3,.."
-            
+
             my @pages;
-            Book::Index::PhraseWordPage->iterate('where phrase = ? and word = ?', $phrase->id, $word->id, sub {
-                push @pages, $_->page;
-            });
-            push @output, "@{[$word->word]} (@{[$phrase->original]})@{[$self->primary($phrase)]}: " . join ',', @pages;
+            Book::Index::PhraseWordPage->iterate(
+                'where phrase = ? and word = ?',
+                $phrase->id,
+                $word->id,
+                sub {
+                    push @pages, $_->page;
+                }
+            );
+            push @output, "@{[$word->word]} (@{[$phrase->original]})@{[$self->primary($phrase)]}: " . join ',',
+                @pages;
         }
         say join "\n", sort @output;
         say '';
     }
-    
+
     say "[Phrase Stems]";
     {
         my @output;
-        for my $phrase_stem (Book::Index::PhraseStem->select) {
-            my $phrase = Book::Index::Phrase->load($phrase_stem->phrase);
-            my $stem = Book::Index::Stem->load($phrase_stem->stem);
-            
+        for my $phrase_stem ( Book::Index::PhraseStem->select ) {
+            my $phrase = Book::Index::Phrase->load( $phrase_stem->phrase );
+            my $stem   = Book::Index::Stem->load( $phrase_stem->stem );
+
             # filter out anything that matches a phrase already output
             # next if $shown{$phrase->original};
-            
+
             # output phrase_stem_pages as "$stem ($original_phrase): 1,2,3,.."
-            
+
             my @pages;
-            Book::Index::PhraseStemPage->iterate('where phrase = ? and stem = ?', $phrase->id, $stem->id, sub {
-                push @pages, $_->page;
-            });
-            push @output, "@{[$stem->stem]} (@{[$phrase->original]})@{[$self->primary($phrase)]}: " . join ',', @pages;
+            Book::Index::PhraseStemPage->iterate(
+                'where phrase = ? and stem = ?',
+                $phrase->id,
+                $stem->id,
+                sub {
+                    push @pages, $_->page;
+                }
+            );
+            push @output, "@{[$stem->stem]} (@{[$phrase->original]})@{[$self->primary($phrase)]}: " . join ',',
+                @pages;
         }
         say join "\n", sort @output;
     }
 }
+
+sub suggest {
+    my $self = shift;
+    
+    $self->suggest_words;
+    $self->suggest_stems;
+}
+
+sub should_filter {
+    my ($self, $word) = @_;
+    warn "Got a ref" if ref $word;
+    return 1 if $StopWords{$word};
+    return 1 if looks_like_number($word);
+    return;
+}
+
+sub suggest_words {
+    my $self = shift;
+    
+    my $sql = <<END_SQL;
+where word not in ( select phrase from phrase )
+  and id not in ( select word from phrase_word )
+  and id not in ( select stem from phrase_stem )
+END_SQL
+    my %count;
+    for my $word (Book::Index::Word->select( $sql )) {
+        next if $self->should_filter($word->word);
+        
+        my @row = Book::Index->selectrow_array('select sum(n) from word_page where word = ?', undef, $word->id);
+        $count{$word->word} = $row[0];
+    };
+    my @top = sort { $count{$b} <=> $count{$a} or $a cmp $b } keys %count;
+    say "Most common words:";
+    for (0 .. 10) {
+        my $word = $top[$_];
+        my $count = $count{$word};
+        say " $word ($count times)";
+    }
+    say '';
+}
+
+sub suggest_stems {
+    my $self = shift;
+    
+    my $sql = <<END_SQL;
+where stem not in ( select phrase from phrase )
+  and id not in ( select word from phrase_word )
+  and id not in ( select stem from phrase_stem )
+END_SQL
+    my %count;
+    for my $stem (Book::Index::Stem->select( $sql )) {
+        next if $self->should_filter($stem->stem);
+        
+        my @row = Book::Index->selectrow_array('select sum(n) from stem_page where stem = ?', undef, $stem->id);
+        $count{$stem->stem} = $row[0];
+    };
+    my @top = sort { $count{$b} <=> $count{$a} or $a cmp $b } keys %count;
+    say "Most common stems:";
+    for (0 .. 10) {
+        my $stem = $top[$_];
+        my $count = $count{$stem};
+        say " $stem ($count times)";
+    }
+    say '';
+}
+
 #
 #
 # sub process {
