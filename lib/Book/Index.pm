@@ -385,19 +385,19 @@ sub output1 {
 
         say 'Phrases:';
         if ( my @phrases = @{ $pages{$page}{phrases} || [] } ) {
-            say join "\n", map {" $_ "} @phrases;
+            say join "\n", map {" $_ "} sort @phrases;
         }
         say '';
         
         if ( my @words = @{ $pages{$page}{words} || [] } ) {
             say 'Phrase Words:';
-            say join "\n", map {" $_ "} @words;
+            say join "\n", map {" $_ "} sort @words;
             say '';
         }
         
         if ( my @stems = @{ $pages{$page}{stems} || [] } ) {
             say 'Phrase Stems:';
-            say join "\n", map {" $_ "} @{ $pages{$page}{stems} || [] };
+            say join "\n", map {" $_ "} sort @{ $pages{$page}{stems} || [] };
             say '';
         }
     }
