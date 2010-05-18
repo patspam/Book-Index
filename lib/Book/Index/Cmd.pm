@@ -4,13 +4,15 @@ use Book::Index;
 
 sub opt_spec {
     return (
-        [ "verbose|v", "be more verbose" ],
-        [ "help|h",    "helpful information" ],
-        [ "rebuild|r", "rebuild database" ],
-        [ "pages=i",   "max pages to process" ],
-        [ "pre=i",   "pre (title) pages to number with roman numerals" ],
-        [ "output|o",  "output report" ],
-        [ "suggest|s", "suggest words" ],
+        [ "verbose|v",   "be more verbose" ],
+        [ "help|h",      "helpful information" ],
+        [ "doc=s",       "(re)build doc" ],
+        [ "phrases=s",   "parse phrases doc" ],
+        [ "max-pages=i", "max pages to process" ],
+        [ "pre-pages=i", "pre (title) pages to number with roman numerals" ],
+        [ "report|r",    "generate report" ],
+        [ "suggest|s",   "suggest words" ],
+        [ "truncate|t",   "truncate all tables" ],
     );
 }
 
@@ -22,22 +24,24 @@ sub validate_args {
         exit 0;
     }
 
-    die $self->usage unless $opt->rebuild || $opt->output || $opt->suggest;
+    die $self->usage unless $opt->doc || $opt->phrases || $opt->report || $opt->suggest || $opt->truncate;
 }
 
 sub execute {
     my ( $self, $opt, $args ) = @_;
 
-    my $max_pages = $opt->pages || 0;
-    my $pre_pages = $opt->pre || 0;
-    
-    my $b = Book::Index->new( verbose => $opt->verbose, max_pages => $max_pages, pre_pages => $pre_pages );
-    if ( $opt->rebuild ) {
-        $self->usage_error('Document and/or Phrases not specified') unless @$args eq 2;
-        $b->truncate;
-        $b->process( $args->[0], $args->[1] );
-    }
-    $b->output  if $opt->output;
+    my $b = Book::Index->new(
+        doc        => $opt->doc,
+        phrase_doc => $opt->phrases,
+        verbose    => $opt->verbose,
+        max_pages  => $opt->max_pages || 0,
+        pre_pages  => $opt->pre_pages || 0,
+    );
+
+    $b->truncate if $opt->truncate;
+    $b->build_doc_information if $opt->doc;
+    $b->build_phrase_information if $opt->phrases;
+    $b->report  if $opt->report;
     $b->suggest if $opt->suggest;
 }
 

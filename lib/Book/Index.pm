@@ -4,6 +4,12 @@ package Book::Index;
 
 =head1 DESCRIPTION
 
+=head1 SYNOPSIS
+
+ perl -Ilib bin/book_index --doc test/text.txt -v --max-pages 3
+ perl -Ilib bin/book_index --phrases test/phrases.txt -v
+ perl -Ilib bin/book_index --report --pre-pages 14 -v > out2.txt
+
 =cut
 
 use 5.010;
@@ -38,35 +44,41 @@ sub truncate {
     }
 }
 
-sub process {
-    my ( $self, $doc, $phrase_doc ) = @_;
-
-    die "File not found: $doc"        unless -e $doc;
-    die "File not found: $phrase_doc" unless -e $phrase_doc;
-    $self->doc($doc);
-    $self->phrase_doc($phrase_doc);
-
-    $self->process_doc;
-    $self->process_phrase_doc;
-    $self->populate_phrase_pages;    # iterates over pages and phrases
-}
-
-sub output {
+sub build_doc_information {
     my $self = shift;
-    $self->output1;
-    $self->output2;
-}
 
-sub process_doc {
-    my $self = shift;
+    die "File not found: @{[$self->doc]}"        unless -e $self->doc;
     $self->slurp_doc;
+    
+    # Clear all tables that we want to build from scratch
+    for my $table qw(Page Word Stem WordPage StemPage)
+    {
+        my $class = "Book::Index::$table";
+        $class->truncate;
+    }
     $self->populate_pages;
 }
 
-sub process_phrase_doc {
+sub build_phrase_information {
     my $self = shift;
+
+    die "File not found: @{[$self->phrase_doc]}" unless -e $self->phrase_doc;
     $self->slurp_phrase_doc;
+    
+    # Clear all tables that we want to build from scratch
+    for my $table qw(Phrase PhrasePage PhraseWord PhraseStem PhraseWordPage PhraseStemPage)
+    {
+        my $class = "Book::Index::$table";
+        $class->truncate;
+    }
     $self->populate_phrases;
+    $self->populate_phrase_pages;    # iterates over pages and phrases
+}
+
+sub report {
+    my $self = shift;
+    $self->report1;
+    $self->report2;
 }
 
 sub populate_pages {
@@ -102,12 +114,11 @@ sub populate_phrases {
     
     $self->log('Populating phrases->');
     my $phrase_line_counter = 0;
+    my $phrase_counter = 0;
     for my $phrase_line ( split "\n", $contents ) {
         $phrase_line_counter++;
 
         # $self->log("LINE: $phrase_line->");
-
-        my $phrase_counter = 0;
         my $primary_id;
         for my $phrase ( split /;/, $phrase_line ) {
 
@@ -121,6 +132,7 @@ sub populate_phrases {
             }
 
             $phrase_counter++;
+            $self->log("Processed $phrase_counter phrases") if $phrase_counter % 10 == 0;
 
             # $self->log("PHRASE: $phrase->");
             my $new_phrase = Book::Index::Phrase->new(
@@ -318,7 +330,7 @@ sub format_page {
     return $page <= $self->pre_pages ? lc Roman($page) : $page - $self->pre_pages;
 }
 
-sub output1 {
+sub report1 {
     my $self = shift;
 
     my %pages;
@@ -390,7 +402,7 @@ sub output1 {
 }
     
 
-sub output2 {
+sub report2 {
     my $self = shift;
 
     # Mush together phrase, word and stem to reduce redundancy
