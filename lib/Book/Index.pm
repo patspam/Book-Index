@@ -2,13 +2,19 @@ package Book::Index;
 
 # ABSTRACT: Create an index for a book manuscript
 
-=head1 DESCRIPTION
-
 =head1 SYNOPSIS
 
- perl -Ilib bin/book_index --doc test/text.txt -v --max-pages 3
- perl -Ilib bin/book_index --phrases test/phrases.txt -v
- perl -Ilib bin/book_index --report --pre-pages 14 -v > out2.txt
+ # Perform frequency analysis on doc
+ book_index --doc test/text.txt --max-pages 3 -v
+ 
+ # Analyse doc using user-supplied phrase list
+ book_index --phrases test/phrases.txt -v
+ 
+ # Generate report
+ book_index --report --pre-pages 14 -v > report.txt
+ 
+ # Suggest words to add to phrase list
+ book_index --suggest
 
 =cut
 
