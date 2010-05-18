@@ -91,7 +91,7 @@ END_SQL
 
 use ORLite {
     'package'    => 'Book::Index',
-    file         => 'data/sqlite.db',
+    file         => 'sqlite.db',
     user_version => USER_VERSION,
 
     #cleanup      => 'VACUUM',

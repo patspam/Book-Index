@@ -11,7 +11,7 @@ package Book::Index;
  book_index --phrases phrases.txt -v
  
  # Generate report
- book_index --report --pre-pages 14 > report.txt
+ book_index --report --pre-pages 14 > report.html
  
  # Suggest words to add to phrase list
  book_index --suggest
@@ -28,6 +28,9 @@ use File::Slurp qw(read_file);
 use Book::Index::Splitter;
 use Lingua::Stem::Snowball;
 use Roman;
+use HTML::Entities qw();
+use Encode;
+sub encode_entities { HTML::Entities::encode_entities( decode("utf8", $_[0]) ) }
 
 has 'doc'                 => ( is => 'rw' );
 has 'doc_contents'        => ( is => 'rw' );
@@ -83,8 +86,20 @@ sub build_phrase_information {
 
 sub report {
     my $self = shift;
+    
+    binmode(STDOUT, ":utf8");
+    say <<'END_HTML';
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html lang="en">
+  <head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8">
+    <title>Book Index</title>
+  </head>
+  <body>
+END_HTML
     $self->report1;
     $self->report2;
+    say '</body></html>';
 }
 
 sub populate_pages {
@@ -323,7 +338,7 @@ sub populate_phrase_pages {
 sub primary {
     my ( $self, $phrase ) = @_;
     if ( $phrase->primary ) {
-        return ' [' . Book::Index::Phrase->load( $phrase->primary )->phrase . ']';
+        return ' [<i>' . encode_entities(Book::Index::Phrase->load( $phrase->primary )->phrase) . '</i>]';
     }
     else {
         return '';
@@ -352,7 +367,7 @@ sub report1 {
             my $phrase = Book::Index::Phrase->load( $phrase_page->phrase );
             my $n      = $phrase_page->n;
             push @{ $pages{$page}{phrases} },
-                $phrase->original . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
+                "<b>@{[encode_entities($phrase->original)]}</b>" . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
             $shown_on_page{ $phrase->phrase }++;
         }
 
@@ -366,7 +381,7 @@ sub report1 {
 
             my $n = $phrase_word_page->n;
             push @{ $pages{$page}{words} },
-                "@{[$word->word]} (@{[$phrase->original]})" . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
+                "<b>@{[encode_entities($word->word)]}</b> (@{[encode_entities($phrase->original)]})" . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
         }
 
         # Stems for phrase on page
@@ -379,31 +394,32 @@ sub report1 {
 
             my $n = $phrase_stem_page->n;
             push @{ $pages{$page}{stems} },
-                "@{[$stem->stem]} (@{[$phrase->original]})" . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
+                "<b>@{[encode_entities($stem->stem)]}</b> (@{[encode_entities($phrase->original)]})" . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
         }
     }
 
+    say '<h1>Pages</h1>';
     for my $page ( sort { $a <=> $b } keys %pages ) {
-        say "-- Page @{[$self->format_page($page)]} --";
-        say '';
+        say "<b>--Page @{[$self->format_page($page)]} --</b><br>";
 
-        say 'Phrases:';
+        say '<b>Phrases:</b> ';
         if ( my @phrases = @{ $pages{$page}{phrases} || [] } ) {
-            say join "\n", map {" $_ "} sort @phrases;
+            say join "; ", map {" $_ "} sort @phrases;
         }
-        say '';
+        say '<br>';
 
         if ( my @words = @{ $pages{$page}{words} || [] } ) {
-            say 'Phrase Words:';
-            say join "\n", map {" $_ "} sort @words;
-            say '';
+            say '<b>Words:</b> ';
+            say join "; ", map {" $_ "} sort @words;
+            say '<br>';
         }
 
         if ( my @stems = @{ $pages{$page}{stems} || [] } ) {
-            say 'Phrase Stems:';
-            say join "\n", map {" $_ "} sort @{ $pages{$page}{stems} || [] };
-            say '';
+            say '<b>Stems:</b> ';
+            say join "; ", map {" $_ "} sort @{ $pages{$page}{stems} || [] };
+            say '<br>';
         }
+        say '<br>';
     }
 }
     
@@ -414,18 +430,20 @@ sub report2 {
     # Mush together phrase, word and stem to reduce redundancy
     my %shown;
     
-    say "[Phrases]";
+    say '<h1>Index</h1>';
+    
+    say "<h2>Phrases</h2>";
     for my $phrase ( Book::Index::Phrase->select('order by phrase') ) {
         my @pages;
         for my $phrase_page ( Book::Index::PhrasePage->select( 'where phrase = ?', $phrase->id ) ) {
             push @pages, $phrase_page->page;
         }
-        say "@{[$phrase->original]}@{[$self->primary($phrase)]}: " . join ',', @pages;
+        say encode_entities($phrase->original) . $self->primary($phrase) . join ',', @pages;
+        say '<br>';
         $shown{ $phrase->phrase }++;
     }
-    say '';
 
-    say "[Phrase Words]";
+    say "<h2>Phrase Words</h2>";
     {
         my @output;
         for my $phrase_word ( Book::Index::PhraseWord->select ) {
@@ -434,6 +452,7 @@ sub report2 {
 
             # Filter out any WORD that matches a phrase already output
             next if $shown{$word->word}++;
+            next if $word->word eq '';
 
             my @pages;
             for my $phrase_word_page (
@@ -441,14 +460,13 @@ sub report2 {
             {
                 push @pages, $phrase_word_page->page;
             }
-            push @output, "@{[$word->word]} (@{[$phrase->original]})@{[$self->primary($phrase)]}: " . join ',',
-                @pages;
+            push @output, '<b>' . encode_entities($word->word) . '</b> ' . encode_entities($phrase->original) . $self->primary($phrase) . ': ' . join ',', @pages;
         }
-        say join "\n", sort @output;
+        say join "<br>", sort @output;
         say '';
     }
 
-    say "[Phrase Stems]";
+    say "<h2>Phrase Stems</h2>";
     {
         my @output;
         for my $phrase_stem ( Book::Index::PhraseStem->select ) {
@@ -457,6 +475,7 @@ sub report2 {
 
             # Filter out any STEM that matches a phrase already output
             next if $shown{$stem->stem}++;
+            next if $stem->stem eq '';
             
             # Filter out stems that are stopwords
             next if $self->splitter->stop($stem->stem);
@@ -467,10 +486,9 @@ sub report2 {
             {
                 push @pages, $phrase_stem_page->page;
             }
-            push @output, "@{[$stem->stem]} (@{[$phrase->original]})@{[$self->primary($phrase)]}: " . join ',',
-                @pages;
+            push @output, '<b>' . encode_entities($stem->stem) . '</b> ' . encode_entities($phrase->original) . $self->primary($phrase) . ': ' . join ',', @pages;
         }
-        say join "\n", sort @output;
+        say join "<br ", sort @output;
     }
 }
 
