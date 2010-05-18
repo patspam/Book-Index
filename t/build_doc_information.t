@@ -19,8 +19,8 @@ my $phrase_docname = "$phrase_doc";
 $phrase_doc->print($original_contents);
 $phrase_doc->close;
 
-my $b = Book::Index->new;
-$b->process( $docname, $phrase_docname );
+my $b = Book::Index->new( doc => $docname, phrase_doc => $phrase_docname);
+$b->build_doc_information;
 
 is( $b->doc_contents, $original_contents, 'Correct contents' );
 
