@@ -24,9 +24,6 @@ has 'phrase_doc_contents' => ( is => 'rw' );
 has 'verbose'             => ( is => 'rw', isa => 'Bool' );
 has 'splitter'            => ( is => 'ro', builder => sub { Book::Index::Splitter->new } );
 has 'stemmer'             => ( is => 'ro', builder => sub { Lingua::Stem::Snowball->new( lang => 'en' ) } );
-has 'seen_phrases' => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );    # not needed?
-has 'seen_words' => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
-has 'seen_stems' => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
 has 'log_indent' => ( is => 'rw', isa => 'Int',     default => 0 );
 has 'max_pages'   => ( is => 'rw', 'isa' => 'Int', default => 20 );
 has 'max_phrases' => ( is => 'rw', 'isa' => 'Int', default => 0 );
@@ -76,6 +73,9 @@ sub populate_pages {
     my $self     = shift;
     my $contents = $self->doc_contents;
 
+    # Private object caches, shared across all pages
+    my ( %seen_words, %seen_stems );
+        
     $self->log('Populating pages->');
     my $page_counter = 0;
     for my $page_contents ( split "\f", $contents ) {
@@ -85,8 +85,8 @@ sub populate_pages {
             page     => $page_counter,
             contents => $page_contents,
         )->insert;
-
-        $self->process_page($page);
+        
+        $self->process_page($page, \%seen_words, \%seen_stems);
 
         last if $self->max_pages && $page_counter >= $self->max_pages;
     }
@@ -97,6 +97,9 @@ sub populate_phrases {
     my $self     = shift;
     my $contents = $self->phrase_doc_contents;
 
+    # Private cache
+    my %seen_phrases;
+    
     $self->log('Populating phrases->');
     my $phrase_line_counter = 0;
     for my $phrase_line ( split "\n", $contents ) {
@@ -112,7 +115,7 @@ sub populate_phrases {
             next unless length $phrase > 0;
 
             # No need to populate phrases twice
-            if ( $self->{seen_phrases}{$phrase} ) {
+            if ( $seen_phrases{$phrase}++ ) {
                 warn "Duplicate phrase: $phrase, line $phrase_line_counter";
                 next;
             }
@@ -120,12 +123,11 @@ sub populate_phrases {
             $phrase_counter++;
 
             # $self->log("PHRASE: $phrase->");
-
-            my $new_phrase = $self->insert_phrase(
+            my $new_phrase = Book::Index::Phrase->new(
                 phrase   => lc $phrase,
                 original => $phrase,
                 primary  => $primary_id,    # null for first on line
-            );
+            )->insert;
 
             # First one becomes the primary id for all the others on the line
             $primary_id ||= $new_phrase->id;
@@ -141,41 +143,43 @@ sub populate_phrases {
 }
 
 sub process_page {
-    my ( $self, $page ) = @_;
+    my ( $self, $page, $seen_words, $seen_stems ) = @_;
+    
+    # Count word and stem appearances on this page
+    my ( %word_freq, %stem_freq );
 
     # Get words on page
     my @words = $self->splitter->words( $page->contents );
     $self->log( 'Page ' . $page->page . ': ' . scalar @words . ' new words' );
 
-    my ( %word_freq, %stem_freq );
     for my $word (@words) {
 
         # Get canonical word and stem
         $word = lc $word;
         my $stem = lc $self->stemmer->stem($word) || '';
 
-        # Insert word and stem into db
-        my $new_stem = $self->insert_stem( stem => $stem );
-        my $new_word = $self->insert_word( word => $word, stem => $new_stem->id );
+        # Insert word and stem into db (if not found in private cache)
+        $seen_stems->{$stem} ||= Book::Index::Stem->new( stem => $stem )->insert;
+        $seen_words->{$word} ||= Book::Index::Word->new( word => $word, stem => $seen_stems->{$stem}->id )->insert;
 
         # Bump the counts
-        $word_freq{$word}++;
-        $stem_freq{$stem}++;
+        $stem_freq{$seen_stems->{$stem}->id}++;
+        $word_freq{$seen_words->{$word}->id}++;
     }
 
     # Create word_page and stem_page entries
-    for my $word ( keys %word_freq ) {
+    for my $word_id ( keys %word_freq ) {
         Book::Index::WordPage->new(
-            word => $self->{seen_words}{$word}->id,
+            word => $word_id,
             page => $page->page,
-            n    => $word_freq{$word}
+            n    => $word_freq{$word_id}
         )->insert;
     }
-    for my $stem ( keys %stem_freq ) {
+    for my $stem_id ( keys %stem_freq ) {
         Book::Index::StemPage->new(
-            stem => $self->{seen_stems}{$stem}->id,
+            stem => $stem_id,
             page => $page->page,
-            n    => $stem_freq{$stem}
+            n    => $stem_freq{$stem_id}
         )->insert;
     }
 }
@@ -249,27 +253,6 @@ sub populate_phrase_stems {
             )->insert;
         }
     }
-}
-
-sub insert_phrase {
-    my ( $self, %args ) = @_;
-    my $original     = $args{original};       # use original instead of phrase
-    my $seen_phrases = $self->seen_phrases;
-    return $seen_phrases->{$original} = $seen_phrases->{$original} || Book::Index::Phrase->new(%args)->insert;
-}
-
-sub insert_word {
-    my ( $self, %args ) = @_;
-    my $word       = $args{word};
-    my $seen_words = $self->seen_words;
-    return $seen_words->{$word} = $seen_words->{$word} || Book::Index::Word->new(%args)->insert;
-}
-
-sub insert_stem {
-    my ( $self, %args ) = @_;
-    my $stem       = $args{stem};
-    my $seen_stems = $self->seen_stems;
-    return $seen_stems->{$stem} = $seen_stems->{$stem} || Book::Index::Stem->new(%args)->insert;
 }
 
 sub slurp_doc {
