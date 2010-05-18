@@ -3,9 +3,11 @@ use base qw(App::Cmd::Simple);
 use Book::Index;
 
 sub opt_spec {
-    return ( 
-        [ "verbose|v", "be more verbose" ], 
-        [ "help|h", "helpful information" ], 
+    return (
+        [ "verbose|v", "be more verbose" ],
+        [ "help|h",    "helpful information" ],
+        [ "rebuild|r", "rebuild database" ],
+        [ "output|o",  "output report" ],
     );
 }
 
@@ -16,15 +18,20 @@ sub validate_args {
         print $self->usage;
         exit 0;
     }
-
-    $self->usage_error('Document and/or Phrases not specified') unless @$args eq 2;
+    
+    die $self->usage unless $opt->rebuild || $opt->output;
 }
 
 sub execute {
     my ( $self, $opt, $args ) = @_;
-    
-    my $b = Book::Index->new( doc => $args->[0], phrase_doc => $args->[1], verbose => $opt->verbose );
-    $b->process;
+
+    my $b = Book::Index->new( verbose => $opt->verbose );
+    if ( $opt->rebuild ) {
+        $self->usage_error('Document and/or Phrases not specified') unless @$args eq 2;
+        $b->truncate;
+        $b->process( $args->[0], $args->[1] );
+    }
+    $b->output if $opt->output;
 }
 
 1;
