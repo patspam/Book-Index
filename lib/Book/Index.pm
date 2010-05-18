@@ -199,8 +199,8 @@ sub populate_phrase_words {
     my ( $self, $phrase, @words ) = @_;
 
     # Skip if word not in words table
-    my $seen_words = $self->seen_words;
-    my @phrase_words = grep {$_} map { $seen_words->{ lc $_ } } @words;
+    my $words = join ', ', map { Book::Index->dbh->quote( lc $_ ) } @words;
+    my @phrase_words = Book::Index::Word->select("where word in ( $words )");
 
     for my $word (@phrase_words) {
 
@@ -228,11 +228,10 @@ sub populate_phrase_stems {
     my @phrase_stems = grep { !m/^[A-Z]/ } @words;
     $self->stemmer->stem_in_place( \@phrase_stems );
 
-    # $self->log("PHRASE STEMS: " . join ':', @phrase_stems);
-
     # Skip if stem not in stems table
-    my $seen_stems = $self->seen_stems;
-    @phrase_stems = grep {$_} map { $seen_stems->{ lc $_ } } @phrase_stems;
+    my $stems = join ', ', map { Book::Index->dbh->quote( lc $_ ) } @phrase_stems;
+    @phrase_stems = Book::Index::Stem->select("where stem in ( $stems )");
+    
     for my $stem (@phrase_stems) {
 
         # $self->log("NEW PHRASE STEM: " . $stem->stem);
