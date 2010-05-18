@@ -197,7 +197,7 @@ sub populate_phrase_words {
 
     # Skip if word not in words table
     my $seen_words = $self->seen_words;
-    my @phrase_words = grep {$_} map { $seen_words->{lc $_} } @words;
+    my @phrase_words = grep {$_} map { $seen_words->{ lc $_ } } @words;
 
     for my $word (@phrase_words) {
 
@@ -229,7 +229,7 @@ sub populate_phrase_stems {
 
     # Skip if stem not in stems table
     my $seen_stems = $self->seen_stems;
-    @phrase_stems = grep {$_} map { $seen_stems->{lc $_} } @phrase_stems;
+    @phrase_stems = grep {$_} map { $seen_stems->{ lc $_ } } @phrase_stems;
     for my $stem (@phrase_stems) {
 
         # $self->log("NEW PHRASE STEM: " . $stem->stem);
@@ -333,49 +333,44 @@ sub output1 {
     my %pages;
     for my $page ( Book::Index::Page->select ) {
         $page = $page->page;
-        
+
         # Make sure page entry exists
         $pages{$page} = {};
 
+        # Mush together phrases, words and stems
         my %shown_on_page;
-        for my $phrase_page (Book::Index::PhrasePage->select('where page = ?',$page)) {
+        for my $phrase_page ( Book::Index::PhrasePage->select( 'where page = ?', $page ) ) {
             my $phrase = Book::Index::Phrase->load( $phrase_page->phrase );
             my $n      = $phrase_page->n;
             push @{ $pages{$page}{phrases} },
                 $phrase->original . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
-            $shown_on_page{ $phrase->original }++;
-        }
-
-        # Words for phrase on page
-        for my $phrase_word_page (Book::Index::PhraseWordPage->select('where page = ?', $page)) {
-            my $word   = Book::Index::Word->load( $phrase_word_page->word );
-            my $phrase = Book::Index::Phrase->load( $phrase_word_page->phrase );
-
-            # filter out words that match a phrase already output
-            #next if $shown_on_page{$word->word};
-
-            my $n = $phrase_word_page->n;
-            push @{ $pages{$page}{words} },
-                  "@{[$word->word]} (@{[$phrase->original]})"
-                . ( $n > 1 ? " x $n" : '' )
-                . $self->primary($phrase);
             $shown_on_page{ $phrase->phrase }++;
         }
 
+        # Words for phrase on page
+        for my $phrase_word_page ( Book::Index::PhraseWordPage->select( 'where page = ?', $page ) ) {
+            my $word   = Book::Index::Word->load( $phrase_word_page->word );
+            my $phrase = Book::Index::Phrase->load( $phrase_word_page->phrase );
+
+            # Filter out words that match a phrase already output
+            next if $shown_on_page{ $word->word }++;
+
+            my $n = $phrase_word_page->n;
+            push @{ $pages{$page}{words} },
+                "@{[$word->word]} (@{[$phrase->original]})" . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
+        }
+
         # Stems for phrase on page
-        for my $phrase_stem_page (Book::Index::PhraseStemPage->select('where page = ?',$page)) {
+        for my $phrase_stem_page ( Book::Index::PhraseStemPage->select( 'where page = ?', $page ) ) {
             my $stem   = Book::Index::Stem->load( $phrase_stem_page->stem );
             my $phrase = Book::Index::Phrase->load( $phrase_stem_page->phrase );
 
             # filter out stems that match a phrase already output
-            next if $shown_on_page{$phrase->phrase};
+            next if $shown_on_page{ $stem->stem }++;
 
             my $n = $phrase_stem_page->n;
             push @{ $pages{$page}{stems} },
-                  "@{[$stem->stem]} (@{[$phrase->original]})"
-                . ( $n > 1 ? " x $n" : '' )
-                . $self->primary($phrase);
-            $shown_on_page{ $phrase->phrase }++;
+                "@{[$stem->stem]} (@{[$phrase->original]})" . ( $n > 1 ? " x $n" : '' ) . $self->primary($phrase);
         }
     }
 
@@ -388,13 +383,13 @@ sub output1 {
             say join "\n", map {" $_ "} sort @phrases;
         }
         say '';
-        
+
         if ( my @words = @{ $pages{$page}{words} || [] } ) {
             say 'Phrase Words:';
             say join "\n", map {" $_ "} sort @words;
             say '';
         }
-        
+
         if ( my @stems = @{ $pages{$page}{stems} || [] } ) {
             say 'Phrase Stems:';
             say join "\n", map {" $_ "} sort @{ $pages{$page}{stems} || [] };
@@ -410,9 +405,9 @@ sub output2 {
     my %shown;
     for my $phrase ( Book::Index::Phrase->select('order by phrase') ) {
         my @pages;
-        for my $phrase_page (Book::Index::PhrasePage->select('where phrase = ?',$phrase->id)) {
+        for my $phrase_page ( Book::Index::PhrasePage->select( 'where phrase = ?', $phrase->id ) ) {
             push @pages, $phrase_page->page;
-        };
+        }
         say "@{[$phrase->original]}@{[$self->primary($phrase)]}: " . join ',', @pages;
         $shown{ $phrase->original }++;
     }
@@ -431,7 +426,9 @@ sub output2 {
             # output phrase_word_pages as "$word ($original_phrase): 1,2,3,.."
 
             my @pages;
-            for my $phrase_word_page (Book::Index::PhraseWordPage->select('where phrase = ? and word = ?',$phrase->id,$word->id)) {
+            for my $phrase_word_page (
+                Book::Index::PhraseWordPage->select( 'where phrase = ? and word = ?', $phrase->id, $word->id ) )
+            {
                 push @pages, $phrase_word_page->page;
             }
             push @output, "@{[$word->word]} (@{[$phrase->original]})@{[$self->primary($phrase)]}: " . join ',',
@@ -454,7 +451,9 @@ sub output2 {
             # output phrase_stem_pages as "$stem ($original_phrase): 1,2,3,.."
 
             my @pages;
-            for my $phrase_stem_page (Book::Index::PhraseStemPage->select('where phrase = ? and stem = ?',$phrase->id,$stem->id)) {
+            for my $phrase_stem_page (
+                Book::Index::PhraseStemPage->select( 'where phrase = ? and stem = ?', $phrase->id, $stem->id ) )
+            {
                 push @pages, $phrase_stem_page->page;
             }
             push @output, "@{[$stem->stem]} (@{[$phrase->original]})@{[$self->primary($phrase)]}: " . join ',',
