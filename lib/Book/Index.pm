@@ -13,7 +13,7 @@ use warnings;
 use Book::Index::Tables;
 use Any::Moose;
 use File::Slurp qw(read_file);
-use Lingua::EN::Splitter; # TODO: replace with something better
+use Lingua::EN::Splitter;    # TODO: replace with something better
 use Lingua::Stem::Snowball;
 use Lingua::EN::StopWords qw(%StopWords);
 use List::MoreUtils qw(uniq);
@@ -23,97 +23,97 @@ has 'doc_contents' => ( is => 'rw' );
 has 'verbose'      => ( is => 'rw', isa => 'Bool' );
 has 'splitter'     => ( is => 'ro', builder => sub { Lingua::EN::Splitter->new } );
 has 'stemmer'      => ( is => 'ro', builder => sub { Lingua::Stem::Snowball->new( lang => 'en' ) } );
-has 'processed_words' => ( is => 'rw', isa => 'HashRef' );
-has 'processed_stems' => ( is => 'rw', isa => 'HashRef' );
-has '_log_indent' => ( is => 'rw', isa => 'Int', default => 0 );
+has 'seen_words'   => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
+has 'seen_stems'   => ( is => 'rw', isa => 'HashRef', default => sub { +{} } );
+has 'log_indent' => ( is => 'rw', isa => 'Int', default => 0 );
 
 sub BUILD {
     my $self = shift;
-
-    my $doc = $self->doc;
+    my $doc  = $self->doc;
     die "File not found: $doc" unless -e $doc;
 }
 
 sub process_doc {
     my $self = shift;
-
-    $self->slurp;
-    $self->process_pages;
+    $self->slurp_doc;
+    $self->populate_pages;
 }
 
-sub process_pages {
+sub populate_pages {
     my $self     = shift;
     my $contents = $self->doc_contents;
 
-    $self->log("Processing pages", 1);
+    $self->log('Populating pages->');
     my $page_counter = 0;
     for my $page_contents ( split "\f", $contents ) {
         $page_counter++;
+        last if $page_counter > 10;
 
-        $self->log("Processing page $page_counter");
         my $page = Book::Index::Page->new(
             page     => $page_counter,
             contents => $page_contents,
         )->insert;
+
+        $self->log("Page $page_counter->");
         $self->process_page($page);
+        $self->log("<-");
     }
-    $self->log("Inserted $page_counter pages", -1);
+    $self->log("<-Inserted $page_counter pages");
 }
 
 sub process_page {
-    my $self = shift;
-    my $page = shift;
+    my ( $self, $page ) = @_;
     
+    # Get words on page
     my @words = uniq @{ $self->splitter->words( $page->contents ) };
-    $self->process_words(@words);
-}
+    
+    my $seen_words = $self->seen_words;
+    my $seen_stems = $self->seen_stems;
 
-sub process_words {
-    my ($self, @words) = @_;
+    $self->log( scalar @words . ' words->' );
     
-    my $processed_words = $self->processed_words;
-    my $processed_stems = $self->processed_stems;
-    
-    $self->log("Processing " . scalar @words . " words", 1);
+    my (%word_freq, %stem_freq);
     for my $word (@words) {
-        $word = lc $word; # TODO: do we really want lowercase?
-        next if $processed_words->{$word};
         
-        my $s = $self->stemmer->stem($word);
-        my $stem = $self->insert_stem( stem => $s );
-        $self->insert_word( word => $word, stem => $stem->id );
+        # Get canonical word and stem
+        $word = lc $word;    # TODO: do we really want lowercase?
+        my $stem = $self->stemmer->stem($word) || '';
+        
+        # Bump word and stem appearances for this page
+        $word_freq{$word}++;
+        $stem_freq{$stem}++;
+        
+        # Insert word and stem into db
+        my $stem_id = $self->insert_stem( stem => $stem )->id;
+        $self->insert_word( word => $word, stem => $stem_id );
     }
+    
+    # Create word_page and stem_page entries
+    for my $word ( keys %word_freq ) {
+        Book::Index::WordPage->new( word => $word, page => $page->page, n => $word_freq{$word} );
+    }
+    for my $stem ( keys %stem_freq ) {
+        Book::Index::StemPage->new( stem => $stem, page => $page->page, n => $stem_freq{$stem} );
+    }
+    
+    $self->log('<-');
 }
 
 sub insert_word {
-    my ($self, %args) = @_;
-    my $word = $args{word};
-    
-    # return cached version, if it exists
-    my $processed_words = $self->processed_words;
-    return $processed_words->{$word} if $processed_words->{$word};
-    
-    # create and insert
-    my $new = Book::Index::Word->new( %args )->insert;
-    $processed_words->{$word} = $new;
-    return $new;
+    my ( $self, %args ) = @_;
+    my $word       = $args{word};
+    my $seen_words = $self->seen_words;
+    return $seen_words->{$word} = $seen_words->{$word} || Book::Index::Word->new(%args)->insert;
 }
 
 sub insert_stem {
-    my ($self, %args) = @_;
-    my $stem = $args{stem};
-    
-    # return cached version, if it exists
-    my $processed_stems = $self->processed_stems;
-    return $processed_stems->{$stem} if $processed_stems->{$stem};
-    
-    # create and insert
-    my $new = Book::Index::Stem->new( %args )->insert;
-    $processed_stems->{$stem} = $new;
-    return $new;
+    my ( $self, %args ) = @_;
+    my $stem       = $args{stem};
+    my $seen_stems = $self->seen_stems;
+    return $seen_stems->{$stem} = $seen_stems->{$stem} || Book::Index::Stem->new(%args)->insert;
 }
 
-sub slurp {
+sub slurp_doc {
     my $self = shift;
     $self->log( "Reading doc: " . $self->doc );
     my $contents = read_file( $self->doc );
@@ -121,9 +121,11 @@ sub slurp {
 }
 
 sub log {
-    my ($self, $message, $indent) = @_;
-    $self->_log_indent( $self->_log_indent + $indent ) if $indent;
-    say( (" " x $indent) . $message ) if defined $message && $self->verbose;
+    my ( $self, $message ) = @_;
+    $self->{log_indent}-- if $message =~ s/^<-//;
+    $self->{log_indent}++ if $message =~ s/->$//;
+    return unless $message;
+    say( ( " " x $self->log_indent ) . $message ) if $self->verbose;
 }
 
 #
