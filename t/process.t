@@ -4,6 +4,8 @@ use Book::Index;
 use Test::Most 'defer_plan', 'die';
 use File::Temp;
 
+Book::Index->truncate;
+
 my @original_pages = ( 'this is page 1', 'page 2 is about horses' );
 my $original_contents = join "\f", @original_pages;
 
@@ -17,8 +19,8 @@ my $phrase_docname = "$phrase_doc";
 $phrase_doc->print($original_contents);
 $phrase_doc->close;
 
-my $b = Book::Index->new( doc => $docname, phrase_doc => $phrase_docname);
-$b->process_doc;
+my $b = Book::Index->new;
+$b->process( $docname, $phrase_docname );
 
 is( $b->doc_contents, $original_contents, 'Correct contents' );
 
@@ -28,15 +30,9 @@ for my $p (0..$#pages) {
 }
 
 my @words = map { $_->word } Book::Index::Word->select('order by word');
-cmp_set([@words], [qw(this is page 1 2 about horses)], 'Correct words');
+cmp_set([@words], [qw(page horses)], 'Correct words');
 
 my @stems = map { $_->stem } Book::Index::Stem->select('order by stem');
-cmp_set([@stems], [qw(this is page 1 2 about hors)], 'Correct stems');
+cmp_set([@stems], [qw(page hors)], 'Correct stems');
 
 all_done;
-
-END { 
-    Book::Index::Page->truncate;
-    Book::Index::Word->truncate;
-    Book::Index::Stem->truncate;
-}

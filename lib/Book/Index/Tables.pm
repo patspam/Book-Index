@@ -66,6 +66,7 @@ use ORLite {
 
     #cleanup      => 'VACUUM',
     create => \&create,
+
     # prune  => 1,          # while developing
 };
 

@@ -6,6 +6,8 @@ use Test::Most 'defer_plan', 'die';
 # Sanity check on DSN
 like(Book::Index->dsn, qr/^dbi:SQLite:/, 'dsn looks ok');
 
+Book::Index->truncate;
+
 # Try using one of the generated classes
 my $book = Book::Index::Page->new( page => 1, contents => 'page 1 contents' )->insert;
 my @pages = Book::Index::Page->select( 'where page = ?', 1 );
@@ -14,7 +16,3 @@ isa_ok($pages[0], 'Book::Index::Page');
 is($pages[0]->contents, 'page 1 contents', 'Correct contents');
 
 all_done;
-
-END { 
-    Book::Index::Page->truncate;
-}
