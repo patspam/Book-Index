@@ -15,7 +15,7 @@ sub create {
         page => [qw(page contents)],
 
         # the phrases that we care about for the final index
-        # parse helen's phrase list
+        # parse the phrase list
         #  split each line into multiple phrases via ';'
         #  first phrase in line is the primary phrase
         # iterate over each phrase

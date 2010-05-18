@@ -5,13 +5,13 @@ package Book::Index;
 =head1 SYNOPSIS
 
  # Perform frequency analysis on doc
- book_index --doc test/text.txt --max-pages 3 -v
+ book_index --doc text.txt --max-pages 3 -v
  
  # Analyse doc using user-supplied phrase list
- book_index --phrases test/phrases.txt -v
+ book_index --phrases phrases.txt -v
  
  # Generate report
- book_index --report --pre-pages 14 -v > report.txt
+ book_index --report --pre-pages 14 > report.txt
  
  # Suggest words to add to phrase list
  book_index --suggest
@@ -498,7 +498,7 @@ END_SQL
     }
     my @top = sort { $count{$b} <=> $count{$a} or $a cmp $b } keys %count;
     say "Most common words:";
-    for ( 0 .. 10 ) {
+    for ( 0 .. 50 ) {
         my $word  = $top[$_];
         my $count = $count{$word};
         say " $word ($count times)";
@@ -523,7 +523,7 @@ END_SQL
     }
     my @top = sort { $count{$b} <=> $count{$a} or $a cmp $b } keys %count;
     say "Most common stems:";
-    for ( 0 .. 10 ) {
+    for ( 0 .. 50 ) {
         my $stem  = $top[$_];
         my $count = $count{$stem};
         say " $stem ($count times)";
