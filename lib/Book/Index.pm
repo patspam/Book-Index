@@ -304,7 +304,7 @@ sub populate_phrase_pages {
             # $self->log("Checking p$p for: $needle");
 
             # Count matches on page
-            my $n = $hay =~ s/$needle//ig;
+            my $n = $hay =~ s/\b$needle\b//ig;
             next unless $n;
 
             # $self->log("p$p MATCHED: $needle");
