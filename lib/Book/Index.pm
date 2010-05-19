@@ -15,7 +15,15 @@ package Book::Index;
  
  # Suggest words to add to phrase list
  book_index --suggest
+ 
+ # Combined (so you can walk away and have a coffee)
+ book_index --doc text.txt --phrases phrases.txt --report --pre-pages 14 > report.html && book_index --suggest
+ 
+=head1 STYLING
 
+You can create a file called style.css in the same directory as the generated HTML report
+to skin your report.
+ 
 =cut
 
 use 5.010;
@@ -94,6 +102,7 @@ sub report {
   <head>
     <meta http-equiv="content-type" content="text/html; charset=utf-8">
     <title>Book Index</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
   </head>
   <body>
 END_HTML
@@ -398,28 +407,28 @@ sub report1 {
         }
     }
 
-    say '<h1>Pages</h1>';
+    say '<h1 class=pages>Pages</h1>';
     for my $page ( sort { $a <=> $b } keys %pages ) {
-        say "<b>--Page @{[$self->format_page($page)]} --</b><br>";
+        say "<div class=page><div class=page_header>--Page @{[$self->format_page($page)]} --</div>";
 
-        say '<b>Phrases:</b> ';
         if ( my @phrases = @{ $pages{$page}{phrases} || [] } ) {
+            say '<div class=page_phrases><span class=page_phrases_label>Phrases:</span><span class=page_phrases>';
             say join "; ", map {" $_ "} sort @phrases;
+            say '</span></div>';
         }
-        say '<br>';
 
         if ( my @words = @{ $pages{$page}{words} || [] } ) {
-            say '<b>Words:</b> ';
+            say '<div class=page_words><span class=page_words_label>Words:</span><span class=page_words>';
             say join "; ", map {" $_ "} sort @words;
-            say '<br>';
+            say '</span></div>';
         }
 
         if ( my @stems = @{ $pages{$page}{stems} || [] } ) {
-            say '<b>Stems:</b> ';
+            say '<div class=page_stems><span class=page_stems_label>Stems:</span><span class=page_stems>';
             say join "; ", map {" $_ "} sort @{ $pages{$page}{stems} || [] };
-            say '<br>';
+            say '</span></div>';
         }
-        say '<br>';
+        say '</div>';
     }
 }
     
@@ -430,9 +439,10 @@ sub report2 {
     # Mush together phrase, word and stem to reduce redundancy
     my %shown;
     
-    say '<h1>Index</h1>';
+    say '<h1 class=index>Index</h1>';
     
-    say "<h2>Phrases</h2>";
+    say "<h2 class=phrases>Phrases</h2>";
+    say '<div class=index_phrases>';
     for my $phrase ( Book::Index::Phrase->select('order by phrase') ) {
         my @pages;
         for my $phrase_page ( Book::Index::PhrasePage->select( 'where phrase = ?', $phrase->id ) ) {
@@ -442,8 +452,10 @@ sub report2 {
         say '<br>';
         $shown{ $phrase->phrase }++;
     }
+    say '</div>';
 
-    say "<h2>Phrase Words</h2>";
+    say "<h2 class=phrase_words>Phrase Words</h2>";
+    say '<div class=index_phrase_words>';
     {
         my @output;
         for my $phrase_word ( Book::Index::PhraseWord->select ) {
@@ -460,13 +472,15 @@ sub report2 {
             {
                 push @pages, $phrase_word_page->page;
             }
-            push @output, '<b>' . encode_entities($word->word) . '</b> ' . encode_entities($phrase->original) . $self->primary($phrase) . ': ' . join ',', @pages;
+            push @output, '<span class=index_phrase_word>' . encode_entities($word->word) . '</span> (' . encode_entities($phrase->original) . ') ' . $self->primary($phrase) . ': ' . join ',', @pages;
         }
         say join "<br>", sort @output;
         say '';
     }
+    say '</div>';
 
-    say "<h2>Phrase Stems</h2>";
+    say "<h2 class=phrase_stems>Phrase Stems</h2>";
+    say '<div class=index_phrase_stems>';
     {
         my @output;
         for my $phrase_stem ( Book::Index::PhraseStem->select ) {
@@ -486,10 +500,11 @@ sub report2 {
             {
                 push @pages, $phrase_stem_page->page;
             }
-            push @output, '<b>' . encode_entities($stem->stem) . '</b> ' . encode_entities($phrase->original) . $self->primary($phrase) . ': ' . join ',', @pages;
+            push @output, '<span class=index_phrase_stem>' . encode_entities($stem->stem) . '</span> (' . encode_entities($phrase->original) . ') ' .$self->primary($phrase) . ': ' . join ',', @pages;
         }
         say join "<br ", sort @output;
     }
+    say '</div>';
 }
 
 sub suggest {
