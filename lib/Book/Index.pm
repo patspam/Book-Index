@@ -446,7 +446,7 @@ sub report2 {
     for my $phrase ( Book::Index::Phrase->select('order by phrase') ) {
         my @pages;
         for my $phrase_page ( Book::Index::PhrasePage->select( 'where phrase = ?', $phrase->id ) ) {
-            push @pages, $phrase_page->page;
+            push @pages, $self->format_page($phrase_page->page);
         }
         say encode_entities($phrase->original) . $self->primary($phrase) . ': ' . join ',', @pages;
         say '<br>';
@@ -470,7 +470,7 @@ sub report2 {
             for my $phrase_word_page (
                 Book::Index::PhraseWordPage->select( 'where phrase = ? and word = ?', $phrase->id, $word->id ) )
             {
-                push @pages, $phrase_word_page->page;
+                push @pages, $self->format_page($phrase_word_page->page);
             }
             push @output, '<span class=index_phrase_word>' . encode_entities($word->word) . '</span> (' . encode_entities($phrase->original) . ') ' . $self->primary($phrase) . ': ' . join ',', @pages;
         }
@@ -498,7 +498,7 @@ sub report2 {
             for my $phrase_stem_page (
                 Book::Index::PhraseStemPage->select( 'where phrase = ? and stem = ?', $phrase->id, $stem->id ) )
             {
-                push @pages, $phrase_stem_page->page;
+                push @pages, $self->format_page($phrase_stem_page->page);
             }
             push @output, '<span class=index_phrase_stem>' . encode_entities($stem->stem) . '</span> (' . encode_entities($phrase->original) . ') ' .$self->primary($phrase) . ': ' . join ',', @pages;
         }
