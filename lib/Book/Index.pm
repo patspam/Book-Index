@@ -438,7 +438,7 @@ sub report2 {
         for my $phrase_page ( Book::Index::PhrasePage->select( 'where phrase = ?', $phrase->id ) ) {
             push @pages, $phrase_page->page;
         }
-        say encode_entities($phrase->original) . $self->primary($phrase) . join ',', @pages;
+        say encode_entities($phrase->original) . $self->primary($phrase) . ': ' . join ',', @pages;
         say '<br>';
         $shown{ $phrase->phrase }++;
     }
